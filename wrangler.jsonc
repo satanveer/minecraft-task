@@ -2,6 +2,6 @@
   "name": "minecraft-task-tracker",
   "compatibility_date": "2025-12-24",
   "assets": {
-    "directory": "./mc/dist"
+    "directory": "./dist"
   }
 }
