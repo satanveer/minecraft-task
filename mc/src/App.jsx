@@ -1,20 +1,15 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { Client, Databases, Query } from 'appwrite';
 import './App.css';
 
-// MongoDB Atlas Data API configuration
-const DATA_API_URL = import.meta.env.VITE_DATA_API_URL || 'https://data.mongodb-api.com/app/YOUR-APP-ID/endpoint/data/v1';
-const DATA_API_KEY = import.meta.env.VITE_DATA_API_KEY || '';
-const DATABASE_NAME = 'minecraft';
-const COLLECTION_NAME = 'tasks';
+// Appwrite configuration
+const client = new Client()
+  .setEndpoint(import.meta.env.VITE_APPWRITE_ENDPOINT || 'https://cloud.appwrite.io/v1')
+  .setProject(import.meta.env.VITE_APPWRITE_PROJECT_ID || '');
 
-const mongoClient = axios.create({
-  baseURL: DATA_API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-    'api-key': DATA_API_KEY
-  }
-});
+const databases = new Databases(client);
+const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID || '';
+const COLLECTION_ID = import.meta.env.VITE_APPWRITE_COLLECTION_ID || '';
 
 function App() {
   const [tasks, setTasks] = useState([]);
@@ -69,18 +64,22 @@ function App() {
   const fetchTasks = async () => {
     try {
       setLoading(true);
-      const filter = {};
-      if (selectedUser !== 'All') filter.assignedTo = selectedUser;
-      if (selectedCategory !== 'All') filter.category = selectedCategory;
+      const queries = [];
       
-      const response = await mongoClient.post('/action/find', {
-        dataSource: 'minecraft',
-        database: DATABASE_NAME,
-        collection: COLLECTION_NAME,
-        filter: filter
-      });
+      if (selectedUser !== 'All') {
+        queries.push(Query.equal('assignedTo', selectedUser));
+      }
+      if (selectedCategory !== 'All') {
+        queries.push(Query.equal('category', selectedCategory));
+      }
       
-      let filteredTasks = response.data.documents;
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTION_ID,
+        queries
+      );
+      
+      let filteredTasks = response.documents;
       if (!showCompleted) {
         filteredTasks = filteredTasks.filter(task => !task.completed);
       }
@@ -90,45 +89,30 @@ function App() {
       console.error('Error fetching tasks:', error);
     } finally {
       setLoading(false);
-    }mongoClient.post('/action/aggregate', {
-        dataSource: 'minecraft',
-        database: DATABASE_NAME,
-        collection: COLLECTION_NAME,
-        pipeline: [
-          {
-            $match: { assignedTo: { $ne: 'All' } }
-          },
-          {
-            $group: {
-              _id: '$assignedTo',
-              total: { $sum: 1 },
-              completed: {
-                $sum: { $cond: ['$completed', 1, 0] }
-              }
-            }
-          }
-        ]
-      });
+    }
+  };
 
+  const fetchStats = async () => {
+    try {
       const statsMap = {};
-      response.data.documents
-  const fetcmongoClient.post('/action/updateOne', {
-        dataSource: 'minecraft',
-        database: DATABASE_NAME,
-        collection: COLLECTION_NAME,
-        filter: { _id: { $oid: taskId } },
-        update: {
-          $set: { completed: !currentStatus }
-        }
-      const response = await axios.get(`${API_URL}/stats/summary`);
-      const statsMap = {};
-      response.data.forEach(stat => {
-        statsMap[stat._id] = {
-          total: stat.total,
-          completed: stat.completed,
-          percentage: Math.round((stat.completed / stat.total) * 100)
+      
+      for (const user of users.filter(u => u !== 'All')) {
+        const response = await databases.listDocuments(
+          DATABASE_ID,
+          COLLECTION_ID,
+          [Query.equal('assignedTo', user)]
+        );
+        
+        const total = response.documents.length;
+        const completed = response.documents.filter(t => t.completed).length;
+        
+        statsMap[user] = {
+          total,
+          completed,
+          percentage: total > 0 ? Math.round((completed / total) * 100) : 0
         };
-      });
+      }
+      
       setStats(statsMap);
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -137,15 +121,12 @@ function App() {
 
   const toggleTask = async (taskId, currentStatus) => {
     try {
-      await axios.patch(`${API_URL}/${taskId}`, {
-        completed: !currentStmongoClient.post('/action/find', {
-        dataSource: 'minecraft',
-        database: DATABASE_NAME,
-        collection: COLLECTION_NAME,
-        filter: { assignedTo: playerName }
-      });
-
-      const playerTasks = response.data.documents
+      await databases.updateDocument(
+        DATABASE_ID,
+        COLLECTION_ID,
+        taskId,
+        { completed: !currentStatus }
+      );
       fetchTasks();
       fetchStats();
     } catch (error) {
@@ -169,8 +150,13 @@ function App() {
 
   const getPlayerStats = async (playerName) => {
     try {
-      const response = await axios.get(API_URL, { params: { assignedTo: playerName } });
-      const playerTasks = response.data;
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        COLLECTION_ID,
+        [Query.equal('assignedTo', playerName)]
+      );
+      
+      const playerTasks = response.documents;
       const completed = playerTasks.filter(t => t.completed).length;
       const total = playerTasks.length;
       
@@ -291,14 +277,14 @@ function App() {
                   <div className="tasks-list">
                     {groupedTasks[category].map(task => (
                       <div
-                        key={task._id}
+                        key={task.$id}
                         className={`task-card ${task.completed ? 'completed' : ''}`}
                       >
                         <div className="task-checkbox">
                           <input
                             type="checkbox"
                             checked={task.completed}
-                            onChange={() => toggleTask(task._id, task.completed)}
+                            onChange={() => toggleTask(task.$id, task.completed)}
                           />
                         </div>
                         <div className="task-content">
