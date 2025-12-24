@@ -2,7 +2,19 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/tasks';
+// MongoDB Atlas Data API configuration
+const DATA_API_URL = import.meta.env.VITE_DATA_API_URL || 'https://data.mongodb-api.com/app/YOUR-APP-ID/endpoint/data/v1';
+const DATA_API_KEY = import.meta.env.VITE_DATA_API_KEY || '';
+const DATABASE_NAME = 'minecraft';
+const COLLECTION_NAME = 'tasks';
+
+const mongoClient = axios.create({
+  baseURL: DATA_API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+    'api-key': DATA_API_KEY
+  }
+});
 
 function App() {
   const [tasks, setTasks] = useState([]);
@@ -57,13 +69,18 @@ function App() {
   const fetchTasks = async () => {
     try {
       setLoading(true);
-      const params = {};
-      if (selectedUser !== 'All') params.assignedTo = selectedUser;
-      if (selectedCategory !== 'All') params.category = selectedCategory;
+      const filter = {};
+      if (selectedUser !== 'All') filter.assignedTo = selectedUser;
+      if (selectedCategory !== 'All') filter.category = selectedCategory;
       
-      const response = await axios.get(API_URL, { params });
+      const response = await mongoClient.post('/action/find', {
+        dataSource: 'minecraft',
+        database: DATABASE_NAME,
+        collection: COLLECTION_NAME,
+        filter: filter
+      });
       
-      let filteredTasks = response.data;
+      let filteredTasks = response.data.documents;
       if (!showCompleted) {
         filteredTasks = filteredTasks.filter(task => !task.completed);
       }
@@ -73,11 +90,36 @@ function App() {
       console.error('Error fetching tasks:', error);
     } finally {
       setLoading(false);
-    }
-  };
+    }mongoClient.post('/action/aggregate', {
+        dataSource: 'minecraft',
+        database: DATABASE_NAME,
+        collection: COLLECTION_NAME,
+        pipeline: [
+          {
+            $match: { assignedTo: { $ne: 'All' } }
+          },
+          {
+            $group: {
+              _id: '$assignedTo',
+              total: { $sum: 1 },
+              completed: {
+                $sum: { $cond: ['$completed', 1, 0] }
+              }
+            }
+          }
+        ]
+      });
 
-  const fetchStats = async () => {
-    try {
+      const statsMap = {};
+      response.data.documents
+  const fetcmongoClient.post('/action/updateOne', {
+        dataSource: 'minecraft',
+        database: DATABASE_NAME,
+        collection: COLLECTION_NAME,
+        filter: { _id: { $oid: taskId } },
+        update: {
+          $set: { completed: !currentStatus }
+        }
       const response = await axios.get(`${API_URL}/stats/summary`);
       const statsMap = {};
       response.data.forEach(stat => {
@@ -96,8 +138,14 @@ function App() {
   const toggleTask = async (taskId, currentStatus) => {
     try {
       await axios.patch(`${API_URL}/${taskId}`, {
-        completed: !currentStatus
+        completed: !currentStmongoClient.post('/action/find', {
+        dataSource: 'minecraft',
+        database: DATABASE_NAME,
+        collection: COLLECTION_NAME,
+        filter: { assignedTo: playerName }
       });
+
+      const playerTasks = response.data.documents
       fetchTasks();
       fetchStats();
     } catch (error) {
